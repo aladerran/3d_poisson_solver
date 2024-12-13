@@ -85,11 +85,31 @@ int main()
     unsigned long long flops_per_point = 19;
     unsigned long long bytes_per_point = 80;
 
+    // Create CUDA streams
+    const int numStreams = 4; // Number of streams
+    cudaStream_t streams[numStreams];
+    for (int s = 0; s < numStreams; ++s)
+    {
+        cudaStreamCreate(&streams[s]);
+    }
+
     while (diff > TOLERANCE && iter < MAX_ITER)
     {
-        // Jacobi iteration
-        jacobiIteration<<<numBlocks, threadsPerBlock>>>(d_phi, d_phi_new, d_f, nx, ny, nz, dx, dy, dz, d_diff_array);
-        cudaCheckError();
+        int z_per_stream = (nz + numStreams - 1) / numStreams;
+
+        for (int s = 0; s < numStreams; ++s)
+        {
+            int z_start = s * z_per_stream;
+            int z_end = min(z_start + z_per_stream, nz);
+            int current_z_range = z_end - z_start;
+        
+            dim3 current_numBlocks((nx + BLOCK_SIZE_X - 1) / BLOCK_SIZE_X,
+                                   (ny + BLOCK_SIZE_Y - 1) / BLOCK_SIZE_Y,
+                                   current_z_range);
+        
+            jacobiIterationStream<<<current_numBlocks, threadsPerBlock, 0, streams[s]>>>(
+                d_phi, d_phi_new, d_f, nx, ny, nz, dx, dy, dz, d_diff_array, z_start, z_end);
+        }
 
         // Swap phi and phi_new
         std::swap(d_phi, d_phi_new);

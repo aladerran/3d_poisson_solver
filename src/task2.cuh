@@ -15,14 +15,18 @@
 
 // Memory management macros
 #define cudaMalloc               hipMalloc
+#define cudaHostAlloc            hipHostAlloc
 #define cudaFree                 hipFree
+#define cudaFreeHost             hipFreeHost
 #define cudaMemcpy               hipMemcpy
+#define cudaMemcpyAsync          hipMemcpyAsync
 #define cudaMemcpyHostToDevice   hipMemcpyHostToDevice
 #define cudaMemcpyDeviceToHost   hipMemcpyDeviceToHost
 #define cudaMemcpyDeviceToDevice hipMemcpyDeviceToDevice
 
 // Error handling macros
 #define cudaError_t              hipError_t
+#define cudaSuccess              hipSuccess
 #define cudaGetLastError         hipGetLastError
 #define cudaGetErrorString       hipGetErrorString
 
@@ -44,9 +48,15 @@
 #define cudaDeviceProp           hipDeviceProp_t
 #define cudaGetDeviceProperties  hipGetDeviceProperties
 
-#define cudaHostRegister         hipHostRegister       
-#define cudaHostRegisterDefault  hipHostRegisterDefault
-#define cudaHostUnregister       hipHostUnregister
+// CUDA error checking macro
+#define cudaCheckError() {                                          \
+    cudaError_t e=cudaGetLastError();                               \
+    if(e!=cudaSuccess) {                                            \
+        printf("Cuda failure %s:%d: '%s'\n",__FILE__,__LINE__,      \
+                cudaGetErrorString(e));                             \
+        exit(0);                                                    \
+    }                                                               \
+}
 
 #else
 
@@ -59,20 +69,23 @@
 #define M_PARAM 2
 #define K_PARAM 2
 
-// #define NX 128
-// #define NY 128
-// #define NZ 128
+#define NX 128
+#define NY 128
+#define NZ 128
 
-#define NX 256
-#define NY 256
-#define NZ 256
+// #define NX 256
+// #define NY 256
+// #define NZ 256
 
 // #define NX 384
 // #define NY 384
 // #define NZ 384
 
-#define BLOCK_SIZE_X 16
-#define BLOCK_SIZE_Y 16
+// #define BLOCK_SIZE_X 16
+// #define BLOCK_SIZE_Y 16
+
+#define BLOCK_SIZE_X 32
+#define BLOCK_SIZE_Y 32
 
 #define TOLERANCE 1e-6
 #define MAX_ITER 1000000
@@ -251,18 +264,29 @@ __global__ void computeResidual(double *phi, double *f, double *residual_array, 
     }
 }
 
-__global__ void computeError(double *phi, double *phi_exact, double *error_array, int nx, int ny, int nz)
+__global__ void computeError(double *phi, double *phi_exact, double *error_array,
+                             int nx, int ny, int nz_local, int z_start)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z;
 
-    if (i < nx && j < ny && k < nz)
+    if (i < nx && j < ny && k < nz_local)
     {
+        int global_k = z_start + k - 1;
         int idx = i + j * nx + k * nx * ny;
 
-        double diff = phi[idx] - phi_exact[idx];
-        error_array[idx] = diff * diff;
+        if (global_k >= 0 && global_k < NZ &&
+            i >= 0 && i < nx &&
+            j >= 0 && j < ny)
+        {
+            double diff = phi[idx] - phi_exact[idx];
+            error_array[idx] = diff * diff;
+        }
+        else
+        {
+            error_array[idx] = 0.0;
+        }
     }
 }
 

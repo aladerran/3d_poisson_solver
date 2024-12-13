@@ -87,8 +87,10 @@ int main()
 
     while (diff > TOLERANCE && iter < MAX_ITER)
     {
-        // Jacobi iteration
-        jacobiIteration<<<numBlocks, threadsPerBlock>>>(d_phi, d_phi_new, d_f, nx, ny, nz, dx, dy, dz, d_diff_array);
+        // Jacobi iteration with shared memory
+        // jacobiIteration<<<numBlocks, threadsPerBlock>>>(d_phi, d_phi_new, d_f, nx, ny, nz, dx, dy, dz, d_diff_array);
+        size_t shmem_size = (BLOCK_SIZE_X+2)*(BLOCK_SIZE_Y+2)*sizeof(double);
+        jacobiIterationShared<<<numBlocks, threadsPerBlock, shmem_size>>>(d_phi, d_phi_new, d_f, nx, ny, nz, dx, dy, dz, d_diff_array);
         cudaCheckError();
 
         // Swap phi and phi_new

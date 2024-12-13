@@ -1,4 +1,5 @@
-mpicxx -O3 -DUSE_HIP -w src/task1_async.cu -o build/task1
+mpicxx -O3 -DUSE_HIP -w src/task1_shared.cu -o build/task1
+mpicxx -O3 -DUSE_HIP -w src/task2.cu -o build/task2
 Running task1...
 Iteration 100, Residual: 5.129998e+05, Error: 1.324026e+03
 Iteration 200, Residual: 3.422897e+05, Error: 1.254687e+03
@@ -521,7 +522,7 @@ Iteration 51800, Residual: 4.096555e-01, Error: 5.440556e-02
 Iteration 51900, Residual: 4.004335e-01, Error: 5.447549e-02
 Iteration 52000, Residual: 3.914191e-01, Error: 5.454394e-02
 Final Iteration 52016, Residual: 3.899958e-01, Error: 5.455476e-02
-Total Time: 44.113926 s
-Total Bandwidth: 1545.796712 GB/s
-Total GFLOPS: 367.126719 GFLOPS
+Total Time: 46.288174 s
+Total Bandwidth: 1473.187561 GB/s
+Total GFLOPS: 349.882046 GFLOPS
 All Steps completed.

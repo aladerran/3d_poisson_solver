@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=1     # Request 1 CPU core per task
 ##SBATCH --exclusive
 #SBATCH -t 00:30:00           # Run time (hh:mm:ss) - 30 minute
-#SBATCH -p devel              # Desired partition
+#SBATCH -p mi2104x              # Desired partition
 
 module load openmpi4/4.1.5
 module load rocm/6.2.1
@@ -21,10 +21,10 @@ make
 
 echo "====Task 1 profiling====."
 
-# rocprof --hip-trace /home1/bustudent15/workspace/3d_poisson_solver/build/task1 > /dev/null
+rocprof --hip-trace /home1/bustudent15/workspace/3d_poisson_solver/build/task1 > /dev/null
 
-# mkdir -p trace/task1/
-# mv *.txt *.json *.csv *.db trace/task1/
+mkdir -p trace/task1/
+mv *.txt *.json *.csv *.db trace/task1/
 
 echo "====Task 1 completed====."
 
@@ -32,12 +32,12 @@ echo "====Task 1 completed====."
 
 srun -n 8 /home1/bustudent15/workspace/3d_poisson_solver/build/task2
 
-# echo "====Task 2 profiling====."
+echo "====Task 2 profiling====."
 
-# rocprof --hip-trace /home1/bustudent15/workspace/3d_poisson_solver/build/task1 > /dev/null
+rocprof --hip-trace /home1/bustudent15/workspace/3d_poisson_solver/build/task1 > /dev/null
 
-# mkdir -p trace/task2/
-# mv *.txt *.json *.csv *.db trace/task2/
+mkdir -p trace/task2/
+mv *.txt *.json *.csv *.db trace/task2/
 
 echo "====Task 2 completed====."
 

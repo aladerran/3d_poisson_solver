@@ -1,51 +1,4 @@
 // task2.cu
-#ifdef USE_HIP
-
-#include <hip/hip_runtime.h>
-
-// Device management macros
-#define cudaGetDeviceCount       hipGetDeviceCount
-#define cudaSetDevice            hipSetDevice
-#define cudaDeviceSynchronize    hipDeviceSynchronize
-
-// Memory management macros
-#define cudaMalloc               hipMalloc
-#define cudaFree                 hipFree
-#define cudaMemcpy               hipMemcpy
-#define cudaMemcpyHostToDevice   hipMemcpyHostToDevice
-#define cudaMemcpyDeviceToHost   hipMemcpyDeviceToHost
-#define cudaMemcpyDeviceToDevice hipMemcpyDeviceToDevice
-
-// Error handling macros
-#define cudaError_t              hipError_t
-#define cudaSuccess              hipSuccess
-#define cudaGetLastError         hipGetLastError
-#define cudaGetErrorString       hipGetErrorString
-
-// Event management macros
-#define cudaEvent_t              hipEvent_t
-#define cudaEventCreate          hipEventCreate
-#define cudaEventRecord          hipEventRecord
-#define cudaEventSynchronize     hipEventSynchronize
-#define cudaEventElapsedTime     hipEventElapsedTime
-#define cudaEventDestroy         hipEventDestroy
-
-// Stream management macros
-#define cudaStream_t             hipStream_t
-#define cudaStreamCreate         hipStreamCreate
-#define cudaStreamDestroy        hipStreamDestroy
-#define cudaStreamSynchronize    hipStreamSynchronize
-
-// Device properties
-#define cudaDeviceProp           hipDeviceProp_t
-#define cudaGetDeviceProperties  hipGetDeviceProperties
-
-#else
-
-#include <cuda_runtime.h>
-
-#endif
-
 #include <iostream>
 #include <cmath>
 #include <cstdio>
@@ -54,39 +7,6 @@
 #include <mpi.h>
 
 #include "task2.cuh"
-
-#define PI 3.14159265358979323846
-#define N_PARAM 2
-#define M_PARAM 2
-#define K_PARAM 2
-
-// #define NX 128
-// #define NY 128
-// #define NZ 128
-
-#define NX 256
-#define NY 256
-#define NZ 256
-
-// #define NX 384
-// #define NY 384
-// #define NZ 384
-
-#define BLOCK_SIZE_X 16
-#define BLOCK_SIZE_Y 16
-
-#define TOLERANCE 1e-6
-#define MAX_ITER 1000000
-
-// CUDA error checking macro
-#define cudaCheckError() {                                          \
-    cudaError_t e=cudaGetLastError();                               \
-    if(e!=cudaSuccess) {                                            \
-        printf("Cuda failure %s:%d: '%s'\n",__FILE__,__LINE__,      \
-                cudaGetErrorString(e));                             \
-        exit(0);                                                    \
-    }                                                               \
-}
 
 int main(int argc, char** argv)
 {
@@ -194,7 +114,7 @@ int main(int argc, char** argv)
     unsigned long long total_bytes = 0;
 
     unsigned long long num_interior = (unsigned long long)(nx - 2) * (ny - 2) * (nz_per_rank);
-    unsigned long long flops_per_point = 15;
+    unsigned long long flops_per_point = 19;
     unsigned long long bytes_per_point = 80;
 
     // MPI requests
@@ -283,18 +203,18 @@ int main(int argc, char** argv)
 
         if (rank > 0)
         {
-            // Send to lower neighbor
-            MPI_Isend(sendbuf_lower, 1, xy_plane_type, rank - 1, 0, MPI_COMM_WORLD, &requests[num_requests++]);
             // Receive from lower neighbor
             MPI_Irecv(recvbuf_lower, 1, xy_plane_type, rank - 1, 1, MPI_COMM_WORLD, &requests[num_requests++]);
+            // Send to lower neighbor
+            MPI_Isend(sendbuf_lower, 1, xy_plane_type, rank - 1, 0, MPI_COMM_WORLD, &requests[num_requests++]);
         }
 
         if (rank < size - 1)
         {
-            // Send to upper neighbor
-            MPI_Isend(sendbuf_upper, 1, xy_plane_type, rank + 1, 1, MPI_COMM_WORLD, &requests[num_requests++]);
             // Receive from upper neighbor
             MPI_Irecv(recvbuf_upper, 1, xy_plane_type, rank + 1, 0, MPI_COMM_WORLD, &requests[num_requests++]);
+            // Send to upper neighbor
+            MPI_Isend(sendbuf_upper, 1, xy_plane_type, rank + 1, 1, MPI_COMM_WORLD, &requests[num_requests++]);
         }
 
         // Wait for communications to complete
@@ -369,7 +289,7 @@ int main(int argc, char** argv)
             double residual = sqrt(global_residual);
 
             // Compute error
-            computeError<<<numBlocks, threadsPerBlock>>>(d_phi, d_phi_exact, d_error_array, nx, ny, nz_local);
+            computeError<<<numBlocks, threadsPerBlock>>>(d_phi, d_phi_exact, d_error_array, nx, ny, nz_local, z_start);
             cudaCheckError();
 
             // Synchronize device after kernel launch
@@ -413,7 +333,7 @@ int main(int argc, char** argv)
     MPI_Allreduce(&local_residual, &global_residual, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     double residual = sqrt(global_residual);
 
-    computeError<<<numBlocks, threadsPerBlock>>>(d_phi, d_phi_exact, d_error_array, nx, ny, nz_local);
+    computeError<<<numBlocks, threadsPerBlock>>>(d_phi, d_phi_exact, d_error_array, nx, ny, nz_local, z_start);
     cudaCheckError();
 
     cudaDeviceSynchronize();
@@ -426,14 +346,18 @@ int main(int argc, char** argv)
     MPI_Allreduce(&local_error, &global_error, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     double error = sqrt(global_error);
 
+    unsigned long long global_flops = 0;
+    unsigned long long global_bytes = 0;
+    
+    MPI_Reduce(&total_flops, &global_flops, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&total_bytes, &global_bytes, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    
     if (rank == 0)
     {
+        double total_bandwidth = (double)global_bytes / total_time / 1e9; // GB/s
+        double total_GFLOPS = (double)global_flops / total_time / 1e9;    // GFLOPS
+    
         printf("Final Iteration %d, Residual: %e, Error: %e\n", iter, residual, error);
-
-        // Compute total bandwidth and FLOPS
-        double total_bandwidth = (double)total_bytes / total_time / 1e9; // GB/s
-        double total_GFLOPS = (double)total_flops / total_time / 1e9;    // GFLOPS
-
         printf("Total Time: %f s\n", total_time);
         printf("Total Bandwidth: %f GB/s\n", total_bandwidth);
         printf("Total GFLOPS: %f GFLOPS\n", total_GFLOPS);
